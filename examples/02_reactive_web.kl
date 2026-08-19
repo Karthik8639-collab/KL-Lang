@@ -1,0 +1,14 @@
+SCHEMA WebState {
+    counter: Int,
+    component_id: String,
+    is_visible: Bool
+}
+
+ACTION UpdateCounter(state: WebState) -> WebState {
+    LET next_count = state.counter + 1;
+    RETURN WebState(
+        counter = next_count, 
+        component_id = state.component_id, 
+        is_visible = true
+    );
+}
