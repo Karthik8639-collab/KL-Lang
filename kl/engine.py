@@ -1,5 +1,5 @@
 """
-KL Core Compiler & Execution Engine v8.2 (Industrial Production Standard)
+KL Core Compiler & Execution Engine v8.3 (Production Standard)
 Full Tokenizer, Memory-Aligned Binary Codec, Hardened AST Sandbox & Validated WASM Emitter
 """
 import struct
@@ -10,7 +10,7 @@ import re
 import os
 
 # ------------------------------------------------------------------------------
-# 1. MEMORY-ALIGNED VTABLE CODEC (8-Byte Padded Frame Header & Bounds Enforced)
+# 1. MEMORY-ALIGNED VTABLE CODEC
 # ------------------------------------------------------------------------------
 class KLCodec:
     MAGIC = b"KL\x08"
@@ -29,7 +29,6 @@ class KLCodec:
         schema_hash = hashlib.sha256(f"{schema_name}:{':'.join(keys)}".encode('utf-8')).digest()[:4]
         
         # Header: Magic(3B) + Version(1B) + Hash(4B) + VTableSize(4B) + NumFields(2B) + HeaderPad(2B) + Offsets(4B*N)
-        # Total header before offsets = 16 bytes (cleanly 8-byte aligned)
         vtable_size = 16 + (num_fields * 4)
         body = bytearray()
         offsets = []
@@ -63,16 +62,15 @@ class KLCodec:
 
         # Frame Header Construction
         core_payload = bytearray(cls.MAGIC)
-        core_payload.append(0x01) # Format version 1
+        core_payload.append(0x01)
         core_payload.extend(schema_hash)
         core_payload.extend(struct.pack("<IH", vtable_size, num_fields))
-        core_payload.extend(b"\x00\x00") # 2-Byte alignment pad to maintain 16-byte base
+        core_payload.extend(b"\x00\x00")
         
         for off in offsets:
             core_payload.extend(struct.pack("<I", off))
         core_payload.extend(body)
 
-        # 4-Byte length prefix (Big-Endian) + 4-Byte framing padding to maintain 8B alignment on memory map
         frame_prefix = struct.pack("!II", len(core_payload), 0x00000000)
         return frame_prefix + bytes(core_payload)
 
@@ -82,11 +80,10 @@ class KLCodec:
             raise ValueError("Corrupt framed packet: Header underflow")
             
         frame_len = struct.unpack("!I", framed_bytes[:4])[0]
-        frame = framed_bytes[8:] # Strip 8-byte network framing header
+        frame = framed_bytes[8:]
         if len(frame) != frame_len:
             raise ValueError("Packet fragmentation fault: Byte length mismatch")
 
-        # Cryptographic Schema Seal Verification
         keys = sorted(expected_keys)
         expected_hash = hashlib.sha256(f"{schema_name}:{':'.join(keys)}".encode('utf-8')).digest()[:4]
         if frame[4:8] != expected_hash:
@@ -96,7 +93,6 @@ class KLCodec:
         if len(keys) != num_fields:
             raise ValueError(f"Schema drift: Expected {len(keys)} fields, found {num_fields}")
 
-        # Fix: Enforce positive index bounds (0 <= field_idx < num_fields)
         if not (0 <= field_idx < num_fields):
             raise IndexError(f"Field index {field_idx} out of range [0, {num_fields-1}]")
 
@@ -131,7 +127,7 @@ class KLCodec:
 
 
 # ------------------------------------------------------------------------------
-# 2. HARDENED AST SANDBOX (Anti-DoS, Multiplier Traps, Immutable Scope)
+# 2. HARDENED AST SANDBOX
 # ------------------------------------------------------------------------------
 class KLSandboxValidator(ast.NodeVisitor):
     DISALLOWED_NODES = (
@@ -153,8 +149,8 @@ class KLSandboxValidator(ast.NodeVisitor):
             raise PermissionError(f"Security Alert: Private/Dunder attribute '{node.attr}' blocked")
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Pow)):
             for operand in (node.left, node.right):
-                if isinstance(operand, ast.Constant) and isinstance(operand.value, (int, float)) and operand.value >= 1000:
-                    raise PermissionError(f"Resource Limit: Multiplication/Exponent constant ({operand.value}) exceeds cap (1000)")
+                if isinstance(operand, ast.Constant) and isinstance(operand.value, (int, float)) and operand.value > 500:
+                    raise PermissionError(f"Resource Limit: Multiplication/Exponent constant ({operand.value}) exceeds cap (500)")
         super().generic_visit(node)
 
 
@@ -170,7 +166,6 @@ class KLCapabilitySandbox:
         validator = KLSandboxValidator()
         validator.visit(tree)
         
-        # Deep copy context into an isolated dictionary to prevent host mutation
         immutable_scope = {"context": dict(context), "result": None}
         exec(compile(tree, "<kl_sandbox>", "exec"), {"__builtins__": cls.SAFE_BUILTINS}, immutable_scope)
         return immutable_scope.get("result")
@@ -184,7 +179,6 @@ class KLCompiler:
 
     @classmethod
     def parse_kl_source(cls, source: str) -> dict:
-        """Robust token-based parser handling single-line, multi-line, and comments."""
         clean_lines = []
         for line in source.splitlines():
             line = re.sub(r'//.*$', '', line)
@@ -192,7 +186,6 @@ class KLCompiler:
                 clean_lines.append(line)
         clean_source = "\n".join(clean_lines)
 
-        # Parse SCHEMA
         schema_match = re.search(r'SCHEMA\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([^}]+)\}', clean_source, re.DOTALL)
         if not schema_match:
             raise SyntaxError("Parser Error: No valid 'SCHEMA <Name> { ... }' declaration found")
@@ -215,11 +208,9 @@ class KLCompiler:
                 raise SyntaxError(f"Unsupported type '{ftype}' for field '{fname}'. Must be one of: {list(cls.VALID_TYPES.keys())}")
             fields[fname] = cls.VALID_TYPES[ftype]
 
-        # Parse ACTION
         action_match = re.search(r'ACTION\s+([A-Za-z_][A-Za-z0-9_]*)', clean_source)
         action_name = action_match.group(1) if action_match else "ExecuteAction"
 
-        # Parse GUARD
         guard_match = re.search(r'GUARD\s+([A-Za-z0-9_.]+)\s*(<=|>=|<|>|==|!=)\s*([0-9.]+)', clean_source)
         guard_rule = {
             "field": guard_match.group(1).replace("req.", "") if guard_match else "risk_score",
@@ -244,7 +235,7 @@ class KLCompiler:
 
 
 # ------------------------------------------------------------------------------
-# 4. W3C-VALIDATED WASM MICRO-EMITTER (Type-Section Byte Count Fixed)
+# 4. W3C-VALIDATED WASM MICRO-EMITTER
 # ------------------------------------------------------------------------------
 class KLWasmEmitter:
     OP_MAP = {"<": 0x5D, "<=": 0x5F, ">": 0x5E, ">=": 0x60, "==": 0x5B, "!=": 0x5C}
@@ -253,7 +244,7 @@ class KLWasmEmitter:
     def emit_guard_module(cls, threshold: float, op: str = "<") -> bytes:
         WASM_MAGIC = b"\x00asm\x01\x00\x00\x00"
         
-        # Section 1: Type (Length: 6 bytes)
+        # Section 1: Type (0x01 = SecID, 0x06 = Length, 0x01 = 1 Type, 0x60 = func, 0x01 = 1 Param, 0x7D = f32, 0x01 = 1 Res, 0x7F = i32)
         type_sec = bytearray([0x01, 0x06, 0x01, 0x60, 0x01, 0x7D, 0x01, 0x7F])
         # Section 3: Function
         func_sec = bytearray([0x03, 0x02, 0x01, 0x00])
@@ -264,19 +255,19 @@ class KLWasmEmitter:
         # Section 10: Code
         opcode = cls.OP_MAP.get(op, 0x5D)
         func_body = bytearray([
-            0x00,       # Local declarations count
-            0x20, 0x00, # local.get 0
-            0x43        # f32.const
+            0x00,
+            0x20, 0x00,
+            0x43
         ])
         func_body.extend(struct.pack("<f", threshold))
         func_body.extend([
-            opcode,     # Dynamic comparison opcode
-            0x04, 0x7F, # if (result i32)
-            0x41, 0x01, # i32.const 1 (True)
-            0x05,       # else
-            0x41, 0x00, # i32.const 0 (False)
-            0x0B,       # end if
-            0x0B        # end func
+            opcode,
+            0x04, 0x7F,
+            0x41, 0x01,
+            0x05,
+            0x41, 0x00,
+            0x0B,
+            0x0B
         ])
         
         code_sec = bytearray([0x0A, len(func_body) + 1, 0x01, len(func_body)]) + func_body
