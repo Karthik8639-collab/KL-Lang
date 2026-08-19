@@ -1,0 +1,16 @@
+SCHEMA SettlementTransaction {
+    account_id: String,
+    amount: Float,
+    fee_rate: Float,
+    authorized: Bool
+}
+
+ACTION ProcessSettlement(tx: SettlementTransaction) -> Float {
+    GUARD tx.amount > 0.0 ELSE FAIL("Invalid settlement value");
+    GUARD tx.authorized == true ELSE FAIL("Unauthorized transaction origin");
+    ```python
+    fee = context['amount'] * context['fee_rate']
+    result = {"net_settlement": round(context['amount'] - fee, 2)}
+    ```
+    RETURN result.net_settlement;
+}
