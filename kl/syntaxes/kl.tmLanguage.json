@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "KL Language",
+  "scopeName": "source.kl",
+  "patterns": [
+    { "name": "comment.line.double-slash.kl", "match": "//.*$" },
+    { "name": "keyword.control.kl", "match": "\\b(SCHEMA|ACTION|GUARD|ELSE|FAIL|EXEC|IN|SANDBOX|LET|RETURN|EMIT|VIEW|PIPELINE)\\b" },
+    { "name": "storage.type.kl", "match": "\\b(String|Float|Int|Bool|User|Token|Currency)\\b" },
+    { "name": "string.quoted.double.kl", "begin": "\"", "end": "\"" },
+    { "name": "constant.numeric.kl", "match": "\\b[0-9]+(\\.[0-9]+)?\\b" }
+  ]
+}
