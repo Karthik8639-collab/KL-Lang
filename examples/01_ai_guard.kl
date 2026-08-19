@@ -1,0 +1,12 @@
+SCHEMA AgentExecutionRequest {
+    agent_id: String,
+    action_type: String,
+    risk_score: Float,
+    is_sandboxed: Bool
+}
+
+ACTION AuthorizeAction(req: AgentExecutionRequest) -> Bool {
+    GUARD req.risk_score < 0.85 ELSE FAIL("Security Violation: High risk threshold tripped");
+    LET is_authorized = EXEC DispatchHostTool(req.action_type) IN SANDBOX;
+    RETURN is_authorized;
+}
