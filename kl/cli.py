@@ -6,6 +6,14 @@ import sys
 import os
 import time
 
+# Auto-configure standard output to UTF-8 across all legacy Windows consoles
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 try:
     from .engine import KLCodec, KLWasmEmitter, KLCompiler, KLCapabilitySandbox
 except ImportError:
@@ -92,7 +100,6 @@ def run_tests():
     
     # 4. Validated WASM Module Generation Test
     wasm = KLWasmEmitter.emit_guard_module(0.85, "<=")
-    # Index 8 is Section ID (0x01), Index 9 is Section Length (0x06)
     assert wasm[9] == 0x06, f"WASM type section length incorrect (got {wasm[9]})"
     print("[✓] W3C WebAssembly Type Header (0x06)   : PASSED")
     
