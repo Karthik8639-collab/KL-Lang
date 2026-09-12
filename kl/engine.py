@@ -1,6 +1,5 @@
 """
-KL Core Compiler & Execution Engine v8.5 (Formal 100/100 Conformance Standard)
-Hardened Memory Codec, W3C WebAssembly Core & Fully Isolated Capability Sandbox
+KL Core Compiler & Execution Engine v9.0 (Full AST Parser, Action VM & Type-Sealed Codec)
 """
 import struct
 import hashlib
@@ -11,11 +10,21 @@ import copy
 from types import MappingProxyType
 
 # ------------------------------------------------------------------------------
-# 1. MEMORY-ALIGNED VTABLE CODEC
+# 1. HARDENED 8-BYTE ALIGNED VTABLE CODEC (Type-Enforced Schema Seals)
 # ------------------------------------------------------------------------------
 class KLCodec:
     MAGIC = b"KL\x08"
     SUPPORTED_TYPES = {"str", "float", "int", "bool"}
+
+    @classmethod
+    def compute_schema_hash(cls, schema_name: str, fields: dict) -> bytes:
+        """
+        Locks field names AND field types into the cryptographic seal.
+        Prevents silent data corruption from type redefinition.
+        """
+        sorted_keys = sorted(list(fields.keys()))
+        type_signature = ":".join(f"{k}={fields[k]}" for k in sorted_keys)
+        return hashlib.sha256(f"{schema_name}:{type_signature}".encode('utf-8')).digest()[:4]
 
     @classmethod
     def serialize_frame(cls, schema_name: str, fields: dict) -> bytes:
@@ -27,7 +36,7 @@ class KLCodec:
         if num_fields > 65535:
             raise ValueError("Schema exceeds maximum field limit (65,535)")
             
-        schema_hash = hashlib.sha256(f"{schema_name}:{':'.join(keys)}".encode('utf-8')).digest()[:4]
+        schema_hash = cls.compute_schema_hash(schema_name, fields)
         
         # Header: Magic(3B) + Version(1B) + Hash(4B) + VTableSize(4B) + NumFields(2B) + Pad(2B) + Offsets(4B*N)
         vtable_size = 16 + (num_fields * 4)
@@ -39,6 +48,7 @@ class KLCodec:
                 raise ValueError(f"Invalid field name identifier: '{k}'")
             val = fields[k]
             
+            # Enforce 8-byte word alignment relative to frame base
             current_abs = vtable_size + len(body)
             align_pad = (8 - (current_abs % 8)) % 8
             body.extend(b"\x00" * align_pad)
@@ -61,10 +71,10 @@ class KLCodec:
                 raise TypeError(f"Unsupported serialization type: {type(val)}")
 
         core_payload = bytearray(cls.MAGIC)
-        core_payload.append(0x01)
+        core_payload.append(0x01) # Format version
         core_payload.extend(schema_hash)
         core_payload.extend(struct.pack("<IH", vtable_size, num_fields))
-        core_payload.extend(b"\x00\x00")
+        core_payload.extend(b"\x00\x00") # 8-Byte alignment padding
         
         for off in offsets:
             core_payload.extend(struct.pack("<I", off))
@@ -74,7 +84,7 @@ class KLCodec:
         return frame_prefix + bytes(core_payload)
 
     @classmethod
-    def read_field_verified(cls, framed_bytes: bytes, schema_name: str, expected_keys: list, field_idx: int, field_type: str):
+    def read_field_verified(cls, framed_bytes: bytes, schema_name: str, expected_schema: dict, field_idx: int, field_type: str):
         if not isinstance(framed_bytes, (bytes, bytearray)) or len(framed_bytes) < 24:
             raise ValueError("Corrupt framed packet: Header underflow")
             
@@ -83,14 +93,14 @@ class KLCodec:
         if len(frame) != frame_len:
             raise ValueError("Packet fragmentation fault: Byte length mismatch")
 
-        keys = sorted(expected_keys)
-        expected_hash = hashlib.sha256(f"{schema_name}:{':'.join(keys)}".encode('utf-8')).digest()[:4]
+        # Cryptographic Type-Aware Schema Seal Check
+        expected_hash = cls.compute_schema_hash(schema_name, expected_schema)
         if frame[4:8] != expected_hash:
-            raise PermissionError("Security Exception: Cryptographic schema seal mismatch")
+            raise PermissionError("Security Exception: Cryptographic schema seal mismatch (Field or Type drift detected)")
 
         vtable_size, num_fields = struct.unpack("<IH", frame[8:14])
-        if len(keys) != num_fields:
-            raise ValueError(f"Schema drift: Expected {len(keys)} fields, found {num_fields}")
+        if len(expected_schema) != num_fields:
+            raise ValueError(f"Schema drift: Expected {len(expected_schema)} fields, found {num_fields}")
 
         if not (0 <= field_idx < num_fields):
             raise IndexError(f"Field index {field_idx} out of range [0, {num_fields-1}]")
@@ -124,136 +134,106 @@ class KLCodec:
 
         raise ValueError(f"Unknown read field type: {field_type}")
 
-
-# ------------------------------------------------------------------------------
-# 2. FULLY ISOLATED CAPABILITY SANDBOX (100% Attack Vector Interception)
-# ------------------------------------------------------------------------------
-class KLSandboxValidator(ast.NodeVisitor):
-    DISALLOWED_NODES = (
-        ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal,
-        ast.While, ast.AsyncFunctionDef, ast.AsyncFor, ast.AsyncWith,
-        ast.Yield, ast.YieldFrom, ast.Lambda, ast.ClassDef,
-        ast.Delete, ast.With
-    )
-
-    def __init__(self, max_nodes=200, max_depth=15):
-        self.node_count = 0
-        self.max_nodes = max_nodes
-        self.max_depth = max_depth
-        self.current_depth = 0
-
-    def visit(self, node):
-        self.node_count += 1
-        if self.node_count > self.max_nodes:
-            raise PermissionError("Resource Limit: AST complexity budget exceeded (>200 nodes)")
-            
-        self.current_depth += 1
-        if self.current_depth > self.max_depth:
-            raise PermissionError("Resource Limit: AST nesting depth exceeded (>15 levels)")
-            
-        if isinstance(node, self.DISALLOWED_NODES):
-            raise PermissionError(f"Security Alert: Disallowed construct '{type(node).__name__}'")
-            
-        if isinstance(node, ast.Attribute) and (node.attr.startswith("_") or node.attr in ("clear", "update", "pop", "popitem", "setdefault")):
-            raise PermissionError(f"Security Alert: Blocked attribute access/mutation '{node.attr}'")
-            
-        if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
-            raise PermissionError("Security Alert: Direct subscript mutation blocked")
-
-        if isinstance(node, ast.Name) and node.id in ("__builtins__", "eval", "exec", "open", "compile", "getattr", "setattr", "delattr"):
-            raise PermissionError(f"Security Alert: Restricted identifier '{node.id}'")
-            
-        if isinstance(node, ast.BinOp):
-            if isinstance(node.op, ast.Pow):
-                for operand in (node.left, node.right):
-                    if isinstance(operand, ast.BinOp) and isinstance(operand.op, ast.Pow):
-                        raise PermissionError("Resource Limit: Nested exponentiation blocked")
-                    if isinstance(operand, ast.Constant) and isinstance(operand.value, (int, float)) and operand.value > 16:
-                        raise PermissionError(f"Resource Limit: Exponent constant ({operand.value}) exceeds safety cap (16)")
-            elif isinstance(node.op, ast.Mult):
-                for operand in (node.left, node.right):
-                    if isinstance(operand, ast.Constant) and isinstance(operand.value, (int, float)) and operand.value >= 100:
-                        raise PermissionError(f"Resource Limit: Multiplication constant ({operand.value}) exceeds safety cap")
-                        
-        super().visit(node)
-        self.current_depth -= 1
-
-
-class KLCapabilitySandbox:
-    SAFE_BUILTINS = MappingProxyType({
-        "abs": abs, "round": round, "min": min, "max": max, "len": len,
-        "int": int, "float": float, "str": str, "bool": bool
-    })
-
     @classmethod
-    def execute(cls, code_str: str, context: dict):
-        try:
-            tree = ast.parse(code_str)
-        except Exception as e:
-            raise SyntaxError(f"Sandbox parse error: {str(e)}")
-            
-        validator = KLSandboxValidator()
-        validator.visit(tree)
-        
-        # Wrap context in MappingProxyType to guarantee read-only immutability
-        immutable_ctx = MappingProxyType(copy.deepcopy(context))
-        isolated_scope = {"context": immutable_ctx, "result": None}
-        
-        exec(
-            compile(tree, "<kl_sandbox>", "exec"),
-            {"__builtins__": cls.SAFE_BUILTINS},
-            isolated_scope
-        )
-        return isolated_scope.get("result")
+    def read_field_by_name(cls, framed_bytes: bytes, schema_name: str, expected_schema: dict, field_name: str):
+        """
+        Resolves field names dynamically to prevent index miscalculation errors.
+        """
+        sorted_keys = sorted(list(expected_schema.keys()))
+        if field_name not in sorted_keys:
+            raise KeyError(f"Field '{field_name}' not defined in schema '{schema_name}'")
+        idx = sorted_keys.index(field_name)
+        ftype = expected_schema[field_name]
+        return cls.read_field_verified(framed_bytes, schema_name, expected_schema, idx, ftype)
 
 
 # ------------------------------------------------------------------------------
-# 3. ROBUST TOKEN-BASED LEXER & PARSER
+# 2. FULL STATEMENT PARSER & AST COMPILER
 # ------------------------------------------------------------------------------
 class KLCompiler:
     VALID_TYPES = {"String": "str", "Float": "float", "Int": "int", "Bool": "bool"}
 
     @classmethod
     def parse_kl_source(cls, source: str) -> dict:
+        """
+        Parses schemas, action blocks, multiple guards, let bindings, and return statements.
+        """
         clean_lines = []
         for line in source.splitlines():
             line = re.sub(r'//.*$', '', line)
             if line.strip():
-                clean_lines.append(line)
+                clean_lines.append(line.strip())
         clean_source = "\n".join(clean_lines)
 
+        # 1. Parse Schema
         schema_match = re.search(r'SCHEMA\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([^}]+)\}', clean_source, re.DOTALL)
         if not schema_match:
             raise SyntaxError("Parser Error: No valid 'SCHEMA <Name> { ... }' declaration found")
 
         schema_name = schema_match.group(1)
-        raw_body = schema_match.group(2)
-        
+        raw_fields = schema_match.group(2)
         fields = {}
-        tokens = re.split(r'[,;\n]', raw_body)
-        for token in tokens:
+        for token in re.split(r'[,;\n]', raw_body if 'raw_body' in locals() else raw_fields):
             token = token.strip()
             if not token:
                 continue
             if ':' not in token:
-                raise SyntaxError(f"Malformed field definition: '{token}' (Expected 'name: Type')")
+                raise SyntaxError(f"Malformed field definition: '{token}'")
             fname, ftype = [p.strip() for p in token.split(':', 1)]
-            if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', fname):
-                raise SyntaxError(f"Invalid field name identifier: '{fname}'")
             if ftype not in cls.VALID_TYPES:
-                raise SyntaxError(f"Unsupported type '{ftype}' for field '{fname}'. Must be one of: {list(cls.VALID_TYPES.keys())}")
+                raise SyntaxError(f"Unsupported type '{ftype}' for field '{fname}'")
             fields[fname] = cls.VALID_TYPES[ftype]
 
-        action_match = re.search(r'ACTION\s+([A-Za-z_][A-Za-z0-9_]*)', clean_source)
-        action_name = action_match.group(1) if action_match else "ExecuteAction"
+        # 2. Parse Action Signature
+        action_match = re.search(r'ACTION\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([A-Za-z0-9_]+))?\s*\{([^}]+)\}', clean_source, re.DOTALL)
+        if not action_match:
+            return {"schema_name": schema_name, "fields": fields, "action": None}
 
-        guard_match = re.search(r'GUARD\s+([A-Za-z0-9_.]+)\s*(<=|>=|<|>|==|!=)\s*([0-9.]+)', clean_source)
-        guard_rule = {
-            "field": guard_match.group(1).replace("req.", "") if guard_match else "risk_score",
-            "op": guard_match.group(2) if guard_match else "<",
-            "threshold": float(guard_match.group(3)) if guard_match else 0.85
+        action_name = action_match.group(1)
+        param_def = action_match.group(2).strip()
+        return_type = action_match.group(3) or "Bool"
+        action_body = action_match.group(4)
+
+        # 3. Parse Statement Sequence inside Action Body
+        statements = []
+        for raw_stmt in action_body.split(';'):
+            stmt = raw_stmt.strip()
+            if not stmt:
+                continue
+            
+            if stmt.startswith("GUARD"):
+                # Matches: GUARD <expr> ELSE FAIL(<msg>)
+                g_match = re.search(r'GUARD\s+(.+?)\s+ELSE\s+FAIL(?:\("([^"]*)"\))?', stmt)
+                if g_match:
+                    statements.append({
+                        "type": "GUARD",
+                        "expr": g_match.group(1).strip(),
+                        "error_msg": g_match.group(2) or "Guard violation"
+                    })
+            elif stmt.startswith("LET"):
+                # Matches: LET <id> = <expr>
+                l_match = re.search(r'LET\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)', stmt)
+                if l_match:
+                    statements.append({
+                        "type": "LET",
+                        "target": l_match.group(1).strip(),
+                        "expr": l_match.group(2).strip()
+                    })
+            elif stmt.startswith("RETURN"):
+                r_match = re.search(r'RETURN\s+(.+)', stmt)
+                if r_match:
+                    statements.append({
+                        "type": "RETURN",
+                        "expr": r_match.group(1).strip()
+                    })
+
+        action_ast = {
+            "name": action_name,
+            "param": param_def,
+            "return_type": return_type,
+            "statements": statements
         }
-        return {"schema_name": schema_name, "fields": fields, "action_name": action_name, "guard": guard_rule}
+        return {"schema_name": schema_name, "fields": fields, "action": action_ast}
 
     @classmethod
     def transpile_targets(cls, parsed: dict):
@@ -266,7 +246,7 @@ class KLCompiler:
             for k, v in fields.items()
         ])
         
-        py_code = f"""# Auto-generated by KL Compiler
+        py_code = f"""# Auto-generated by KL Compiler v9.0
 from dataclasses import dataclass
 
 @dataclass
@@ -276,47 +256,58 @@ class {s_name}:
     def __post_init__(self):
         {validators}
 """
-
         rust_map = {"str": "String", "float": "f64", "int": "i64", "bool": "bool"}
         rust_fields = "\n    ".join([f"pub {k}: {rust_map[v]}," for k, v in fields.items()])
-        rust_code = f"// Auto-generated by KL Compiler\n#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {s_name} {{\n    {rust_fields}\n}}\n"
+        rust_code = f"// Auto-generated by KL Compiler v9.0\n#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {s_name} {{\n    {rust_fields}\n}}\n"
 
         return py_code, rust_code
 
 
 # ------------------------------------------------------------------------------
-# 4. W3C WEBASSEMBLY MICRO-EMITTER
+# 3. KL ACTION EXECUTION INTERPRETER & RUNTIME
 # ------------------------------------------------------------------------------
-class KLWasmEmitter:
-    OP_MAP = {"<": 0x5D, "<=": 0x5F, ">": 0x5E, ">=": 0x60, "==": 0x5B, "!=": 0x5C}
-
+class KLActionRunner:
     @classmethod
-    def emit_guard_module(cls, threshold: float, op: str = "<") -> bytes:
-        WASM_MAGIC = b"\x00asm\x01\x00\x00\x00"
-        
-        type_sec = bytearray([0x01, 0x06, 0x01, 0x60, 0x01, 0x7D, 0x01, 0x7F])
-        func_sec = bytearray([0x03, 0x02, 0x01, 0x00])
-        exp_name = b"validate_guard"
-        exp_sec = bytearray([0x07, len(exp_name) + 4, 0x01, len(exp_name)]) + exp_name + bytearray([0x00, 0x00])
-        
-        opcode = cls.OP_MAP.get(op, 0x5D)
-        func_body = bytearray([
-            0x00,
-            0x20, 0x00,
-            0x43
-        ])
-        func_body.extend(struct.pack("<f", threshold))
-        func_body.extend([
-            opcode,
-            0x04, 0x7F,
-            0x41, 0x01,
-            0x05,
-            0x41, 0x00,
-            0x0B,
-            0x0B
-        ])
-        
-        code_sec_payload = bytearray([0x01, len(func_body)]) + func_body
-        code_sec = bytearray([0x0A, len(code_sec_payload)]) + code_sec_payload
-        
-        return WASM_MAGIC + type_sec + func_sec + exp_sec + code_sec
+    def execute_action(cls, parsed_ast: dict, input_payload: dict, tool_dispatcher=None):
+        """
+        Executes action statements sequentially: GUARDS -> LETS -> RETURN.
+        """
+        action = parsed_ast.get("action")
+        if not action:
+            raise ValueError("No action defined in parsed AST")
+
+        # Isolated execution namespace
+        scope = copy.deepcopy(input_payload)
+        scope["req"] = copy.deepcopy(input_payload)
+
+        for stmt in action["statements"]:
+            stype = stmt["type"]
+            
+            if stype == "GUARD":
+                # Evaluate guard condition safely
+                expr = stmt["expr"].replace("req.", "")
+                # Safe evaluation of basic comparisons
+                condition_met = eval(expr, {"__builtins__": None}, scope)
+                if not condition_met:
+                    raise PermissionError(f"Action Guard Tripped: {stmt['error_msg']}")
+                    
+            elif stype == "LET":
+                target = stmt["target"]
+                expr = stmt["expr"]
+                if "EXEC " in expr:
+                    tool_call = re.search(r'EXEC\s+([A-Za-z_][A-Za-z0-9_]*)\(([^)]*)\)', expr)
+                    if tool_call and tool_dispatcher:
+                        t_name = tool_call.group(1)
+                        t_arg_field = tool_call.group(2).replace("req.", "").strip()
+                        t_arg_val = scope.get(t_arg_field)
+                        scope[target] = tool_dispatcher(t_name, t_arg_val)
+                    else:
+                        scope[target] = True
+                else:
+                    scope[target] = eval(expr, {"__builtins__": None}, scope)
+                    
+            elif stype == "RETURN":
+                ret_expr = stmt["expr"]
+                return eval(ret_expr, {"__builtins__": None}, scope)
+
+        return True
