@@ -81,6 +81,7 @@ Output
   • examples/04_iot_settlement.klb         (8-Byte Aligned Tagged VTable Frame: 145B - Real Payload)
   • examples/04_iot_settlement.wasm        (W3C Validated Micro-WASM: 62B)
 
+Step 2: Run tests and AI Agent MCP integration demo
 
 # Run formal audit verification suite
 python kl/cli.py test
