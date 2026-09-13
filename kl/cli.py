@@ -2,6 +2,7 @@
 """
 KL Industrial CLI Toolchain v10.5 (Industrial Protocol Engine & AI Agent IDL)
 Multi-Target Code Generation (Python, Rust, TypeScript, Go), OpenAI & MCP Adapters, JSON Transcoder Gateway
+Features: Domain-Aware Realistic Sample Payload Generator for Binary .klb Builds
 """
 import sys
 import os
@@ -23,6 +24,72 @@ except ImportError:
     from engine import KLCodec, KLWasmEmitter, KLCompiler, KLCapabilitySandbox, KLActionRunner, KLDecimal, KLGuardError
     from agent_bridge import KLAgentBridge
     from gateway import KLGateway
+
+
+def generate_realistic_sample_payload(parsed_ast: dict) -> dict:
+    """Generates realistic domain-aware mock sample payloads for binary frame serialization."""
+    schema_meta = parsed_ast.get("schema_meta", [])
+    payload = {}
+
+    for f_meta in schema_meta:
+        fname = f_meta["name"].lower()
+        orig_fname = f_meta["name"]
+        ftype = f_meta["type"]
+
+        if ftype in ("Decimal", "decimal"):
+            if "fee" in fname or "rate" in fname:
+                payload[orig_fname] = KLDecimal("0.025")
+            elif "amount" in fname or "price" in fname or "balance" in fname or "tuition" in fname:
+                payload[orig_fname] = KLDecimal("1250.00")
+            elif "gpa" in fname or "score" in fname:
+                payload[orig_fname] = KLDecimal("3.85")
+            else:
+                payload[orig_fname] = KLDecimal("100.00")
+        elif ftype in ("Float", "float"):
+            if "score" in fname or "risk" in fname:
+                payload[orig_fname] = 0.45
+            elif "pos_x" in fname or "x" in fname:
+                payload[orig_fname] = 120.5
+            elif "pos_y" in fname or "y" in fname:
+                payload[orig_fname] = 340.2
+            elif "vel" in fname or "speed" in fname:
+                payload[orig_fname] = 15.0
+            else:
+                payload[orig_fname] = 75.5
+        elif ftype in ("Int", "int"):
+            if "counter" in fname or "count" in fname:
+                payload[orig_fname] = 42
+            elif "grade" in fname or "level" in fname:
+                payload[orig_fname] = 11
+            elif "credits" in fname:
+                payload[orig_fname] = 120
+            else:
+                payload[orig_fname] = 1
+        elif ftype in ("Bool", "bool"):
+            payload[orig_fname] = True
+        elif ftype in ("String", "str"):
+            if "agent" in fname:
+                payload[orig_fname] = "gpt4_agent_007"
+            elif "action" in fname:
+                payload[orig_fname] = "QueryDatabase"
+            elif "student_id" in fname:
+                payload[orig_fname] = "std_8829"
+            elif "student_name" in fname or "name" in fname:
+                payload[orig_fname] = "Alex Johnson"
+            elif "account" in fname:
+                payload[orig_fname] = "acc_usr_9918"
+            elif "component" in fname:
+                payload[orig_fname] = "user_header_widget"
+            elif "currency" in fname:
+                payload[orig_fname] = "USD"
+            else:
+                payload[orig_fname] = f"sample_{orig_fname}"
+        elif ftype.startswith("Optional"):
+            payload[orig_fname] = None
+        else:
+            payload[orig_fname] = None
+
+    return payload
 
 
 def run_build(target_path: str):
@@ -60,20 +127,9 @@ def run_build(target_path: str):
     with open(f"{base_name}_mcp.json", "w", encoding="utf-8") as f:
         json.dump(mcp_tool, f, indent=2)
 
-    # 3. Binary VTable Frame Generation (.klb)
-    dummy_payload = {}
-    for f_meta in parsed["schema_meta"]:
-        fname = f_meta["name"]
-        ftype = f_meta["type"]
-        if ftype == "String": dummy_payload[fname] = "default_val"
-        elif ftype == "Float": dummy_payload[fname] = 100.0
-        elif ftype == "Int": dummy_payload[fname] = 1
-        elif ftype == "Bool": dummy_payload[fname] = True
-        elif ftype == "Decimal": dummy_payload[fname] = KLDecimal("100.00")
-        elif ftype.startswith("Optional"): dummy_payload[fname] = None
-        else: dummy_payload[fname] = None
-
-    bin_frame = KLCodec.serialize_frame(parsed["schema_name"], dummy_payload, parsed["schema_meta"])
+    # 3. Binary VTable Frame Generation (.klb) with Domain-Aware Real Data
+    sample_payload = generate_realistic_sample_payload(parsed)
+    bin_frame = KLCodec.serialize_frame(parsed["schema_name"], sample_payload, parsed["schema_meta"])
     with open(f"{base_name}.klb", "wb") as f:
         f.write(bin_frame)
 
@@ -92,7 +148,7 @@ def run_build(target_path: str):
     print(f"  • {base_name}_schema.go   (Go Struct with Tags)")
     print(f"  • {base_name}_openai.json (OpenAI Function Calling Tool Schema)")
     print(f"  • {base_name}_mcp.json    (Anthropic MCP Tool Schema)")
-    print(f"  • {base_name}.klb         (8-Byte Aligned Tagged VTable Frame: {len(bin_frame)}B)")
+    print(f"  • {base_name}.klb         (8-Byte Aligned Tagged VTable Frame: {len(bin_frame)}B - Real Payload)")
     print(f"  • {base_name}.wasm        (W3C Validated Micro-WASM: {len(wasm_bytes)}B)")
 
 
@@ -150,7 +206,7 @@ def run_tests():
     except PermissionError:
         print("[✓] Anti-DoS Sandbox Multiplier Trap     : PASSED")
 
-    # 6. AST Compiler & Action VM Execution Test
+        # 6. AST Compiler & Action VM Execution Test
     source_04 = """
     SCHEMA SettlementTransaction {
         @1 account_id: String,
