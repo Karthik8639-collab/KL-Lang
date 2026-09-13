@@ -80,3 +80,10 @@ Output
   • examples/04_iot_settlement_mcp.json    (Anthropic MCP Tool Schema)
   • examples/04_iot_settlement.klb         (8-Byte Aligned Tagged VTable Frame: 145B - Real Payload)
   • examples/04_iot_settlement.wasm        (W3C Validated Micro-WASM: 62B)
+
+
+# Run formal audit verification suite
+python kl/cli.py test
+
+# Run AI Agent Anthropic MCP integration demo
+python examples/06_ai_agent_mcp_demo.py
