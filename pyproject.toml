@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kl-engine"
+version = "10.5.0"
+description = "Universal AI Agent Protocol & Industrial IDL with Fixed-Point Decimal and AST Sandbox"
+readme = "README.md"
+authors = [
+  { name = "Karthik & Collaborators", email = "collab@kl-lang.org" }
+]
+license = { text = "Apache-2.0" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["ai-agent", "mcp", "protocol", "idl", "protobuf", "decimal", "sandbox", "wasm"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Karthik8639-collab/KL-Lang"
+Documentation = "https://github.com/Karthik8639-collab/KL-Lang#readme"
+
+[project.scripts]
+kl = "kl.cli:main"
