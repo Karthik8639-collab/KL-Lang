@@ -1,0 +1,31 @@
+{
+  "name": "@kl-lang/engine",
+  "version": "10.5.0",
+  "description": "Universal AI Agent Protocol Engine, Tagged VTable Codec & AST Sandbox IDL",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Karthik8639-collab/KL-Lang.git"
+  },
+  "keywords": [
+    "ai-agent",
+    "mcp",
+    "model-context-protocol",
+    "idl",
+    "protobuf",
+    "vtable",
+    "wasm",
+    "sandbox"
+  ],
+  "author": "Karthik & Collaborators",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Karthik8639-collab/KL-Lang/issues"
+  },
+  "homepage": "https://github.com/Karthik8639-collab/KL-Lang#readme"
+}
