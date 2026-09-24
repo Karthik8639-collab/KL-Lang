@@ -2,7 +2,7 @@
 """
 KL Industrial CLI Toolchain v10.5 (Industrial Protocol Engine & AI Agent IDL)
 Multi-Target Code Generation (Python, Rust, TypeScript, Go), OpenAI & MCP Adapters, JSON Transcoder Gateway
-Features: Domain-Aware Realistic Sample Payload Generator for Binary .klb Builds
+Features: Domain-Aware Realistic Sample Payload Generator for Binary .klb Builds & 13 Formal Spec Checks
 """
 import sys
 import os
@@ -206,7 +206,7 @@ def run_tests():
     except PermissionError:
         print("[✓] Anti-DoS Sandbox Multiplier Trap     : PASSED")
 
-        # 6. AST Compiler & Action VM Execution Test
+    # 6. AST Compiler & Action VM Execution Test
     source_04 = """
     SCHEMA SettlementTransaction {
         @1 account_id: String,
@@ -284,8 +284,21 @@ def run_tests():
     assert gateway_res["status"] == "SUCCESS", "Gateway action execution failed"
     print("[✓] Fast JSON/REST Transcoder Gateway   : PASSED")
 
+    # 13. LangChain & OpenAI 1-Line Framework Adapters Test
+    try:
+        from .frameworks import KLLangChainTool, KLOpenAIAdapter
+    except ImportError:
+        from frameworks import KLLangChainTool, KLOpenAIAdapter
+
+    lc_tool = KLLangChainTool(source_04)
+    assert lc_tool.name == "ProcessSettlement", "LangChain tool name mismatch"
+    lc_res = lc_tool.run(account_id="acc_100", amount="100.00", fee_rate="0.05", authorized=True)
+    assert lc_res["status"] == "SUCCESS", "LangChain execution failed"
+    assert lc_res["result"] == "95.00", "LangChain execution result mismatch"
+    print("[✓] LangChain & OpenAI 1-Line Adapters  : PASSED")
+
     print("==================================================================")
-    print("VERDICT: ALL 12 FORMAL SPECIFICATION CHECKS PASSED (100/100)")
+    print("VERDICT: ALL 13 FORMAL SPECIFICATION CHECKS PASSED (100/100)")
     print("==================================================================")
 
 
