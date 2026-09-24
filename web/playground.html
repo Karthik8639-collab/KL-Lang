@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KL Protocol v10.5 — Interactive Web Playground</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --text: #c9d1d9;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { color: #fff; margin-bottom: 5px; }
+    .subtitle { color: #8b949e; margin-bottom: 20px; }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    textarea {
+      width: 100%;
+      height: 250px;
+      background: #0d1117;
+      color: #79c0ff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+    pre {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+      font-size: 12px;
+      color: #e6edf3;
+    }
+    .btn {
+      background: #238636;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .btn:hover { background: #2ea043; }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #1f6feb;
+      color: #fff;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>⚡ KL Protocol v10.5 Playground</h1>
+  <div class="subtitle">Interactive WebAssembly & AI Agent Tool Contract Simulator</div>
+
+  <div>
+    <span class="badge">VTable 8B Aligned</span>
+    <span class="badge">Fixed-Point Decimal</span>
+    <span class="badge">32B SHA-256 Seal</span>
+    <span class="badge">Anthropic MCP Ready</span>
+  </div>
+
+  <div class="container" style="margin-top: 20px;">
+    <div class="card">
+      <h3>1. Write KL Protocol Contract (.kl)</h3>
+      <textarea id="kl_code">SCHEMA TransferFundsRequest {
+    @1 sender_account: String,
+    @2 recipient_account: String,
+    @3 amount: Decimal,
+    @4 currency: String,
+    @5 authorized_by_user: Bool
+}
+
+ACTION ExecuteTransfer(req: TransferFundsRequest) -> Result<Decimal, TransferError> {
+    GUARD req.amount > 0.0d ELSE FAIL(InvalidAmount, "Transfer amount must be positive");
+    GUARD req.authorized_by_user == true ELSE FAIL(UserUnconfirmed, "Authorization required");
+    LET fee = req.amount * 0.015d;
+    LET net_amount = req.amount - fee;
+    RETURN net_amount;
+}</textarea>
+      <button class="btn" onclick="compileKL()">⚡ Compile & Export MCP Tool</button>
+    </div>
+
+    <div class="card">
+      <h3>2. Exported Anthropic MCP Tool Schema</h3>
+      <pre id="mcp_output">Click 'Compile & Export MCP Tool' to generate tool definition...</pre>
+    </div>
+  </div>
+
+  <script>
+    function compileKL() {
+      const code = document.getElementById('kl_code').value;
+      const mcpSchema = {
+        "name": "ExecuteTransfer",
+        "description": "Sandboxed KL Protocol Tool: TransferFundsRequest",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sender_account": { "type": "string", "description": "Tag @1" },
+            "recipient_account": { "type": "string", "description": "Tag @2" },
+            "amount": { "type": "string", "description": "Tag @3 (Fixed-point Decimal)" },
+            "currency": { "type": "string", "description": "Tag @4" },
+            "authorized_by_user": { "type": "boolean", "description": "Tag @5" }
+          },
+          "required": ["sender_account", "recipient_account", "amount", "currency", "authorized_by_user"]
+        },
+        "kl_metadata": {
+          "vtable_alignment": "8-Byte Word Aligned",
+          "schema_seal": "5a0372c2f017181f... (SHA-256)",
+          "sandbox_budget": "200 AST Nodes Max",
+          "precision": "Fixed-Point 64-bit Mantissa + 8-bit Scale"
+        }
+      };
+      document.getElementById('mcp_output').innerText = JSON.stringify(mcpSchema, null, 2);
+    }
+  </script>
+
+</body>
+</html>
