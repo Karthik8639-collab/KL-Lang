@@ -11,13 +11,13 @@
 ---
 
 ## 📜 Evolutionary Journey (From v1.0 to v10.5 Protocol Standard)
-### ⏳ Version Evolution
 
-| Version | Core Architecture | Primary Memory Paradigm | Key Paradigm Enhancements |
-| :--- | :--- | :--- | :--- |
-| **v1.0 - v8.0** | **Dynamic Scripting** | Unsafe Heap Allocation | Initial scripting implementation relying on dynamic runtimes and unconstrained heap allocations. |
-| **v9.0 - v9.1** | **Action VM & Codec** | Fixed Offsets & Seals | Transitioned to absolute compilation offsets and cryptographic schema integrity validation. |
-| **v10.0 - v10.5** | **AI Agent Protocol IDL** | MCP & Multi-Target | Modern decoupled schema architecture enabling universal AI tool execution and cross-language generation. |
+
+| Version Range | Core Architecture & Feature Focus | Key Attributes & Capabilities |
+| :--- | :--- | :--- |
+| **v1.0 – v8.0** | Dynamic Scripting | Unsafe Heap Alloc |
+| **v9.0 – v9.1** | Action VM & Codec | Fixed Offsets & Seals |
+| **v10.0 – v10.5** | AI Agent Protocol IDL | MCP & Multi-Target |
 
 
 * **v1.0 – v8.0 (Experimental Prototype):** Dynamic scripting interpreter. Suffered from unconstrained heap allocations, IEEE-754 float drift, and non-deterministic security risks.
@@ -68,6 +68,7 @@ Modern distributed systems, cloud microservices, and AI Agent networks face thre
 ```bash
 python kl/cli.py build examples/04_iot_settlement.kl
 
+
 Output
 
 ⚡ [KL Protocol Compiler v10.5] Building 'examples/04_iot_settlement.kl'...
@@ -82,7 +83,6 @@ Output
   • examples/04_iot_settlement.wasm        (W3C Validated Micro-WASM: 62B)
 
 Step 2: Run tests and AI Agent MCP integration demo
-
 # Run formal audit verification suite
 python kl/cli.py test
 
